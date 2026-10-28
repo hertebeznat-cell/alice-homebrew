@@ -278,3 +278,15 @@ func TestYamAutoSetupOnce(t *testing.T) {
 	pc.station = false
 	pc.AutoSetup(ctx, filepath.Join(t.TempDir(), "r.json"))
 }
+
+func TestIsAndroid(t *testing.T) {
+	root := t.TempDir()
+	if IsAndroid(root) {
+		t.Fatal("empty root reported as Android")
+	}
+	os.MkdirAll(filepath.Join(root, "system", "bin"), 0755)
+	os.WriteFile(filepath.Join(root, "system", "bin", "app_process"), nil, 0755)
+	if !IsAndroid(root) {
+		t.Fatal("Android marker missed")
+	}
+}

@@ -71,6 +71,8 @@ def main(argv=None,log=print):
                 raise RuntimeError('Speaker command failed: '+output)
             return '\n'.join(lines[:-1]).strip()
         if 'uid=0' not in shell('id'): raise RuntimeError('ADB root is required')
+        if shell('if [ -e /system/framework/framework.jar ] || [ -e /system/bin/app_process ]; then echo android; fi')=='android':
+            raise RuntimeError('This station runs Android. Alice Homebrew supports only Linux-based Yandex stations; nothing was changed.')
         machine=shell('uname -m')
         if machine not in BINARIES: raise RuntimeError(f'Unsupported station CPU: {machine}')
         identity=shell(r'cat /proc/device-tree/compatible 2>/dev/null | tr "\000" "\n"; getprop ro.product.device 2>/dev/null; getprop ro.product.model 2>/dev/null; true')

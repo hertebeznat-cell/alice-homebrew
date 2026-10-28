@@ -2,9 +2,11 @@ package homebrew
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -104,6 +106,9 @@ func MatchPlatform(identity string) (platformInfo, bool) {
 // DetectDevice reads the station identity. An explicit override wins; on a
 // computer without one the manager reports a preview device.
 func DetectDevice(override string) (DeviceProfile, error) {
+	if runtime.GOOS == "linux" && (runtime.GOARCH == "arm64" || runtime.GOARCH == "arm") && IsAndroid("/") {
+		return DeviceProfile{}, errors.New("Android-based stations are not supported by Alice Homebrew")
+	}
 	if override != "" {
 		p, ok := platformByID(override)
 		if !ok {
@@ -208,4 +213,15 @@ func PreviewRingLayout(id string) RingLayout {
 		return RingLayout{ID: "midi", Count: 24}
 	}
 	return mini1Layout
+}
+
+// IsAndroid reports an Android system: Homebrew targets the Linux
+// (buildroot) stations and refuses Android-based ones.
+func IsAndroid(root string) bool {
+	for _, marker := range []string{"system/framework/framework.jar", "system/bin/app_process"} {
+		if _, e := os.Stat(filepath.Join(root, marker)); e == nil {
+			return true
+		}
+	}
+	return false
 }
