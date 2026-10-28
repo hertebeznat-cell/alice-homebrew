@@ -1,0 +1,205 @@
+/*
+ * better-design · interaction kit (CSS)
+ * The baseline motion every interactive element ships with. Not optional and not a polish
+ * pass: adopt it at the start of a UI, map the --ui-* tokens to DESIGN.md motion roles,
+ * then build components on top. Pair with interaction-kit.js (pointer highlight, size-aware
+ * press depth, keyboard press, segmented indicator, button states).
+ *
+ * Press model (all three layers together; one layer alone reads as "dead"):
+ *   1. Down, immediately (≤ 90 ms): the element compresses by a constant ~3 px per side
+ *      (scale set per element by JS; CSS fallback 0.96) and its fill shifts one step.
+ *   2. A soft highlight blooms from the exact press point.
+ *   3. Release: it springs back with a small overshoot (~16% of the travel, ≈ 1.006 scale),
+ *      settling in ~500 ms. The action itself never waits for the animation.
+ */
+
+:root {
+  /* Durations */
+  --ui-press-down: 80ms;
+  --ui-release: 520ms;
+  --ui-hover: 200ms;
+  --ui-focus: 160ms;
+  --ui-state: 260ms;
+  /* Easing */
+  --ui-ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ui-ease-color: cubic-bezier(0.25, 0.1, 0.25, 1);
+  /* Damped springs as linear() curves (zeta 0.5 → 16% overshoot; zeta 0.75 → 3%). */
+  --ui-spring-pop: linear(0, 0.044, 0.155, 0.307, 0.475, 0.642, 0.794, 0.922, 1.023, 1.094, 1.139, 1.16, 1.162, 1.15, 1.129, 1.103, 1.075, 1.049, 1.025, 1.006, 0.991, 0.981, 0.976, 0.973, 0.974, 0.977, 0.981, 0.985, 0.989, 0.994, 0.997, 1, 1.002, 1.003, 1.004, 1.004, 1.004, 1.004, 1.003, 1.002, 1);
+  --ui-spring-snap: linear(0, 0.03, 0.105, 0.207, 0.32, 0.435, 0.545, 0.644, 0.732, 0.806, 0.867, 0.915, 0.953, 0.981, 1.001, 1.015, 1.023, 1.027, 1.028, 1.028, 1.026, 1.023, 1.02, 1.016, 1.013, 1.01, 1.008, 1.006, 1.004, 1.003, 1);
+  /* Colors (map to DESIGN.md roles) */
+  --ui-focus-ring: #2997ff;
+  --ui-highlight: rgb(255 255 255 / 0.22);      /* bloom on dark fills */
+  --ui-highlight-on-light: rgb(0 0 0 / 0.12);   /* bloom on light fills */
+}
+
+/* ── Press: the base for every button, link-button, chip, tile and icon button ──────── */
+.ui-press {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transform: scale(1);
+  transition:
+    transform var(--ui-release) var(--ui-spring-pop),
+    background-color var(--ui-hover) var(--ui-ease-color),
+    color var(--ui-hover) var(--ui-ease-color),
+    box-shadow var(--ui-hover) var(--ui-ease-color),
+    filter var(--ui-hover) var(--ui-ease-color),
+    outline-offset var(--ui-focus) var(--ui-ease-out), outline-color var(--ui-focus) var(--ui-ease-out);
+}
+.ui-press:active:not(:disabled):not([aria-disabled="true"]),
+.ui-press[data-pressed] {
+  transform: scale(var(--ui-press-scale, 0.96));
+  filter: brightness(var(--ui-press-brightness, 0.92));
+  transition-duration: var(--ui-press-down);
+  transition-timing-function: var(--ui-ease-out);
+}
+/* Dark fills brighten instead of darkening. */
+.ui-press--on-dark { --ui-press-brightness: 1.18; }
+/* Large surfaces (tiles, cards, list rows) move less. */
+.ui-press--surface { --ui-press-scale: 0.985; }
+
+/* Highlight bloom from the press point (coordinates set by interaction-kit.js). */
+.ui-press::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(circle at var(--ui-px, 50%) var(--ui-py, 50%), var(--ui-bloom, var(--ui-highlight-on-light)) 0%, transparent var(--ui-bloom-r, 70%));
+  opacity: 0;
+  transition: opacity 600ms var(--ui-ease-out);
+}
+.ui-press--on-dark::after { --ui-bloom: var(--ui-highlight); }
+.ui-press[data-pressed]::after { opacity: 1; transition-duration: 90ms; }
+
+/* Hover: a fill step and the content's own micro-motion, never a lift. */
+@media (hover: hover) and (pointer: fine) {
+  .ui-press:hover:not(:disabled) { filter: brightness(var(--ui-hover-brightness, 0.96)); }
+  .ui-press--on-dark:hover:not(:disabled) { --ui-hover-brightness: 1.1; }
+  .ui-press:hover .ui-icon-nudge { transform: translateX(3px); }
+}
+.ui-icon-nudge { display: inline-block; transition: transform 300ms var(--ui-spring-snap); }
+
+/* Disabled: no press, no hover, visibly unavailable. */
+.ui-press:disabled, .ui-press[aria-disabled="true"] { cursor: not-allowed; opacity: 0.45; filter: none; }
+
+/* ── Focus: the ring grows into place instead of popping ─────────────────────────────── */
+.ui-focus { outline: 2px solid transparent; outline-offset: 6px; }
+/* Components below list the ring in their own transition; a bare .ui-focus gets its own.
+   Never give an element a second `transition` shorthand: the later one wins and silently
+   deletes the press and release animation. */
+.ui-focus:not(.ui-press, .ui-dim, .ui-switch, .ui-check, .ui-link, .ui-field, .ui-segmented > button) { transition: outline-offset var(--ui-focus) var(--ui-ease-out), outline-color var(--ui-focus) var(--ui-ease-out); }
+.ui-focus:focus-visible { outline-color: var(--ui-focus-ring); outline-offset: 2px; }
+
+/* ── Link: underline draws from the reading start; press dims ───────────────────────── */
+.ui-link {
+  color: inherit; text-decoration: none;
+  background: linear-gradient(currentColor, currentColor) 0 100% / 0 1px no-repeat;
+  transition: background-size 320ms var(--ui-ease-out), opacity 120ms linear, outline-offset var(--ui-focus) var(--ui-ease-out), outline-color var(--ui-focus) var(--ui-ease-out);
+}
+@media (hover: hover) and (pointer: fine) { .ui-link:hover { background-size: 100% 1px; } }
+.ui-link:focus-visible { background-size: 100% 1px; }
+.ui-link:active { opacity: 0.6; transition-duration: 320ms, 40ms, var(--ui-focus), var(--ui-focus); }
+
+/* ── Text action (nav links, "Learn more ›"): dims under the finger, eases back ───── */
+.ui-dim { transition: opacity 320ms var(--ui-ease-out), color var(--ui-hover) var(--ui-ease-color), outline-offset var(--ui-focus) var(--ui-ease-out), outline-color var(--ui-focus) var(--ui-ease-out); }
+.ui-dim:active, .ui-dim[data-pressed] { opacity: 0.5; transition-duration: 40ms, var(--ui-hover), var(--ui-focus), var(--ui-focus); }
+@media (hover: hover) and (pointer: fine) { .ui-dim:hover .ui-icon-nudge { transform: translateX(3px); } }
+
+/* ── Switch: the thumb stretches under the finger, then travels with a snap spring ───── */
+.ui-switch { position: relative; width: 51px; height: 31px; border-radius: 99px; border: 0; padding: 0; cursor: pointer; flex: none;
+  background: var(--ui-switch-off, #39393d); transition: background-color var(--ui-state) var(--ui-ease-color), filter var(--ui-hover) var(--ui-ease-color), outline-offset var(--ui-focus) var(--ui-ease-out), outline-color var(--ui-focus) var(--ui-ease-out); }
+.ui-switch[aria-checked="true"] { background: var(--ui-switch-on, #30d158); }
+.ui-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 99px; background: #fff;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.25); transition: left 420ms var(--ui-spring-snap), width 160ms var(--ui-ease-out); }
+.ui-switch[aria-checked="true"]::after { left: 22px; }
+.ui-switch:active::after, .ui-switch[data-pressed]::after { width: 33px; }
+.ui-switch[aria-checked="true"]:active::after, .ui-switch[aria-checked="true"][data-pressed]::after { left: 16px; }
+
+/* ── Checkbox: the box compresses on press; the tick draws itself ───────────────────── */
+.ui-check { position: relative; display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 7px; flex: none; cursor: pointer;
+  border: 1.5px solid var(--ui-check-border, #86868b); background: transparent;
+  transition: background-color 180ms var(--ui-ease-color), border-color 180ms var(--ui-ease-color), transform var(--ui-release) var(--ui-spring-pop), outline-offset var(--ui-focus) var(--ui-ease-out), outline-color var(--ui-focus) var(--ui-ease-out), box-shadow 300ms var(--ui-ease-out); }
+.ui-check:active { transform: scale(0.88); box-shadow: 0 0 0 5px var(--ui-check-halo, rgb(255 255 255 / 0.14)); transition-duration: 180ms, 180ms, var(--ui-press-down), var(--ui-focus), var(--ui-focus), 60ms; }
+.ui-check[aria-checked="true"] { background: var(--ui-check-on, #2997ff); border-color: var(--ui-check-on, #2997ff); }
+.ui-check svg { width: 14px; height: 14px; overflow: visible; }
+.ui-check path { fill: none; stroke: #fff; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 20; stroke-dashoffset: 20; transition: stroke-dashoffset 120ms var(--ui-ease-out); }
+.ui-check[aria-checked="true"] path { stroke-dashoffset: 0; transition: stroke-dashoffset 260ms var(--ui-ease-out) 60ms; }
+
+/* ── Segmented control / tabs: one indicator slides between options ─────────────────── */
+.ui-segmented { position: relative; display: inline-flex; padding: 3px; border-radius: 99px; background: var(--ui-seg-track, rgb(255 255 255 / 0.08)); isolation: isolate; }
+.ui-segmented > button { position: relative; z-index: 1; border: 0; background: none; color: inherit; font: inherit; padding: 8px 16px; border-radius: 99px; cursor: pointer;
+  opacity: 0.7; transition: opacity var(--ui-hover) var(--ui-ease-color), transform var(--ui-release) var(--ui-spring-pop), outline-offset var(--ui-focus) var(--ui-ease-out), outline-color var(--ui-focus) var(--ui-ease-out); }
+.ui-segmented > button[aria-selected="true"], .ui-segmented > button[aria-pressed="true"] { opacity: 1; }
+.ui-segmented > button:active { transform: scale(0.95); opacity: 0.55; transition-duration: var(--ui-hover), var(--ui-press-down), var(--ui-focus), var(--ui-focus); }
+.ui-segmented__indicator { position: absolute; z-index: 0; top: 3px; bottom: 3px; left: 0; width: 0; border-radius: 99px; background: var(--ui-seg-indicator, rgb(255 255 255 / 0.16));
+  transform: translateX(var(--ui-seg-x, 0)); width: var(--ui-seg-w, 0); transition: transform 460ms var(--ui-spring-snap), width 460ms var(--ui-spring-snap); }
+
+@media (hover: hover) and (pointer: fine) {
+  .ui-switch:hover { filter: brightness(1.12); }
+  .ui-check:hover:not([aria-checked="true"]) { border-color: var(--ui-check-hover, #c7c7cc); }
+  .ui-segmented > button:hover:not([aria-selected="true"]):not([aria-pressed="true"]) { opacity: 0.9; }
+  /* A hover rule with :not() chains outranks a plain :active rule: restate the press after
+     it with the same chain, or the press is invisible while the pointer is over the item. */
+  .ui-segmented > button:hover:not([aria-selected="true"]):not([aria-pressed="true"]):active { opacity: 0.55; }
+}
+
+/* ── Button states: pending keeps its width; success confirms once ──────────────────── */
+.ui-btn-state { display: inline-grid; place-items: center; }
+.ui-btn-state > * { grid-area: 1 / 1; transition: opacity 180ms var(--ui-ease-out), transform 260ms var(--ui-spring-snap); }
+.ui-btn-state > .ui-state-pending, .ui-btn-state > .ui-state-done { opacity: 0; transform: translateY(6px) scale(0.9); }
+.ui-btn-state[data-state="pending"] > .ui-state-label, .ui-btn-state[data-state="done"] > .ui-state-label { opacity: 0; transform: translateY(-6px) scale(0.96); }
+.ui-btn-state[data-state="pending"] > .ui-state-pending, .ui-btn-state[data-state="done"] > .ui-state-done { opacity: 1; transform: none; }
+.ui-spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: ui-spin 700ms linear infinite; }
+@keyframes ui-spin { to { transform: rotate(360deg); } }
+
+/* ── Icon swap (copy → check, play → pause): the old icon leaves, the new one lands ─── */
+.ui-swap { display: inline-grid; place-items: center; }
+.ui-swap > * { grid-area: 1 / 1; transition: opacity 160ms var(--ui-ease-out), transform 380ms var(--ui-spring-pop); }
+.ui-swap > :last-child { opacity: 0; transform: scale(0.5) rotate(-30deg); }
+.ui-swap[data-swapped] > :first-child { opacity: 0; transform: scale(0.5) rotate(30deg); }
+.ui-swap[data-swapped] > :last-child { opacity: 1; transform: none; }
+
+/* ── Toggle icon pop (like, bookmark, star): one pop when it turns on ───────────────── */
+@keyframes ui-pop { 0% { transform: scale(1); } 35% { transform: scale(1.28); } 100% { transform: scale(1); } }
+[aria-pressed="true"] > .ui-pop-icon { animation: ui-pop 420ms var(--ui-ease-out); }
+
+/* ── Field: focus grows the ring; an error shakes once, with its text ───────────────── */
+.ui-field { transition: border-color var(--ui-hover) var(--ui-ease-color), box-shadow var(--ui-focus) var(--ui-ease-out); }
+.ui-field:focus-visible, .ui-field:focus { outline: none; border-color: var(--ui-focus-ring); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-ring) 35%, transparent); }
+@keyframes ui-shake { 0%, 100% { transform: none; } 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+.ui-shake { animation: ui-shake 320ms var(--ui-ease-out); }
+
+/* ── Menus, popovers, dialogs: grow from their origin, leave faster ─────────────────── */
+.ui-pop-in {
+  transform-origin: var(--ui-origin, top center);
+  transition: opacity 200ms var(--ui-ease-out), transform 260ms var(--ui-spring-snap), overlay 200ms allow-discrete, display 200ms allow-discrete;
+}
+.ui-pop-in:not(:popover-open):not([open]) { opacity: 0; transform: scale(0.96) translateY(-4px); transition-duration: 140ms; }
+.ui-pop-in:popover-open, .ui-pop-in[open] { opacity: 1; transform: none; }
+@starting-style { .ui-pop-in:popover-open, .ui-pop-in[open] { opacity: 0; transform: scale(0.96) translateY(-4px); } }
+dialog.ui-pop-in::backdrop { background: rgb(0 0 0 / 0); transition: background-color 260ms var(--ui-ease-out), overlay 260ms allow-discrete, display 260ms allow-discrete; }
+dialog.ui-pop-in[open]::backdrop { background: rgb(0 0 0 / 0.5); }
+@starting-style { dialog.ui-pop-in[open]::backdrop { background: rgb(0 0 0 / 0); } }
+
+/* ── Disclosure: height animates to auto ────────────────────────────────────────────── */
+:root { interpolate-size: allow-keywords; }
+.ui-disclosure::details-content { block-size: 0; overflow: clip; transition: block-size 320ms var(--ui-ease-out), content-visibility 320ms allow-discrete; }
+.ui-disclosure[open]::details-content { block-size: auto; }
+.ui-disclosure summary { transition: background-color var(--ui-hover) var(--ui-ease-color), outline-offset var(--ui-focus) var(--ui-ease-out), outline-color var(--ui-focus) var(--ui-ease-out); }
+@media (hover: hover) and (pointer: fine) { .ui-disclosure summary:hover { background-color: var(--ui-row-hover, rgb(255 255 255 / 0.04)); } }
+.ui-disclosure summary:active { background-color: var(--ui-row-press, rgb(255 255 255 / 0.08)); transition-duration: 60ms, var(--ui-focus), var(--ui-focus); }
+.ui-disclosure summary .ui-chevron { display: inline-block; transition: transform 320ms var(--ui-spring-snap); }
+.ui-disclosure[open] summary .ui-chevron { transform: rotate(90deg); }
+
+/* ── Reduced motion: keep every state change visible, drop travel, scale and springs ── */
+@media (prefers-reduced-motion: reduce) {
+  .ui-press, .ui-check, .ui-segmented > button, .ui-icon-nudge, .ui-swap > *, .ui-btn-state > * { transition-property: background-color, color, filter, opacity, box-shadow, outline-offset, outline-color; }
+  .ui-press:active:not(:disabled):not([aria-disabled="true"]), .ui-press[data-pressed], .ui-check:active, .ui-segmented > button:active { transform: none; }
+  .ui-switch::after, .ui-segmented__indicator, .ui-pop-in, .ui-disclosure::details-content { transition-duration: 0.01ms; }
+  [aria-pressed="true"] > .ui-pop-icon, .ui-shake { animation: none; }
+  .ui-swap > :last-child, .ui-swap[data-swapped] > :first-child, .ui-btn-state > * { transform: none; }
+}

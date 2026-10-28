@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -103,7 +104,9 @@ func run() error {
 	}
 	listen := flags.String("listen", defaultListen, "listen address")
 	data := flags.String("data", "./alice-homebrew-data", "private data directory")
-	hardware := flags.Bool("hardware-led", false, "enable fixed Mini 1 I2C LED backend")
+	hardware := flags.Bool("hardware-led", false, "enable the Station Mini 1 I2C LED backend when running on that model")
+	platform := flags.String("platform", "", "station profile instead of auto-detection: "+strings.Join(homebrew.PlatformIDs(), ", "))
+	yamRoot := flags.String("yam-root", "/data/yam", "yam v2 root on the station")
 	local := flags.Bool("allow-local-store", false, "allow HTTP catalogs for local testing")
 	scanner := flags.String("scanner", "", "path to clamscan (moderator only)")
 	managed := flags.Bool("managed", false, "managed Linux service: automatic manager updates and restart")
@@ -129,10 +132,28 @@ func run() error {
 	defer cancel()
 	managerDone := make(chan struct{})
 	if role == "station" {
+		device, e := homebrew.DetectDevice(*platform)
+		if e != nil {
+			return e
+		}
+		// The I2C driver is Mini 1 hardware; other rings are found in sysfs.
+		homebrew.AllowI2CRing = device.ID == "yandexmini"
 		manager, e = homebrew.NewManager(*data, *hardware, *local)
 		if e != nil {
 			return e
 		}
+		if *hardware {
+			// On the station the probe result is the truth.
+			device.LEDRing = manager.Ring.Hardware
+			if !device.LEDRing {
+				fmt.Printf("no supported LED ring on %s; plugins run without LED output\n", device.ID)
+			}
+		} else {
+			manager.Ring.SetPreviewLayout(homebrew.PreviewRingLayout(device.ID))
+		}
+		manager.Device = device
+		manager.Yam = homebrew.NewYam(device)
+		manager.Yam.Root = *yamRoot
 		manager.Updater, e = homebrew.NewUpdater(*data, *listen, *managed)
 		if e != nil {
 			return e
@@ -145,7 +166,7 @@ func run() error {
 			return e
 		}
 	}
-	server := &http.Server{Addr: *listen, Handler: homebrew.NewServer(manager, store, token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 90 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
+	server := &http.Server{Addr: *listen, Handler: homebrew.NewServer(manager, store, token), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 120 * time.Second, WriteTimeout: 90 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() {
 		<-ctx.Done()
 		c, stop := context.WithTimeout(context.Background(), 5*time.Second)

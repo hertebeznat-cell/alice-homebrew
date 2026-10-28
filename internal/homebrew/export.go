@@ -35,7 +35,7 @@ func (s *Store) Export(out io.Writer, repository string) error {
 		_, e = w.Write(b)
 		return e
 	}
-	for _, item := range []struct{ Name, Source string }{{"docs/index.html", "web/pages.html"}, {"docs/store.js", "web/pages.js"}, {"docs/style.css", "web/style.css"}} {
+	for _, item := range []struct{ Name, Source string }{{"docs/index.html", "web/pages.html"}, {"docs/store.js", "web/pages.js"}, {"docs/style.css", "web/pages.css"}} {
 		b, e := web.ReadFile(item.Source)
 		if e != nil {
 			return e

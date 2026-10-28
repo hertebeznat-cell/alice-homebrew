@@ -1,4 +1,4 @@
-"""Install the built ARM64 service over an isolated ADB server.
+"""Install the built service on a rooted Yandex station over an isolated ADB server.
 
 No partition flashing. Default mode checks requirements only. --install writes
 the service under /data; --autostart additionally installs a known init hook.
@@ -14,6 +14,20 @@ import subprocess
 import time
 import urllib.request
 
+# Same order and patterns as internal/homebrew/device.go and yam install.sh.
+PLATFORMS=[('yandexmini_2',('yandex,station-mini2','station-mini2')),('cucumber',('yandex,cucumber-dvt2','cucumber')),
+    ('yandexmidi',('yandex,station-midi',)),('orion',('yandex,orion-pvt','orion')),('pickle',('yandex,pickle-evt','pickle')),
+    ('bergamot',('yandex,station-mini3','bergamot')),('saturn',('yandex,saturn','saturn')),('yandexstation',('tulip-d1','tulip')),
+    ('yandexstation_2',('yandexstation_2','station-max')),('jbl_link_music',('mediatek,mt8167','jbl')),('mango',('mango',)),
+    ('plum',('plum',)),('yandexmicro',('yandex,station-micro','station-micro','yandexmicro')),('yandexmini',('amlogic,axg','yndx-0004'))]
+BINARIES={'aarch64':'alice-homebrew-linux-arm64','armv7l':'alice-homebrew-linux-arm','armv8l':'alice-homebrew-linux-arm'}
+
+def detect_platform(identity):
+    identity=identity.lower().replace(' ','')  # Mini 1 reports "amlogic, axg"
+    for platform,patterns in PLATFORMS:
+        if any(p in identity for p in patterns): return platform
+    return ''
+
 def main(argv=None,log=print):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--adb',default=shutil.which('adb') or shutil.which('adb.exe'))
@@ -21,9 +35,8 @@ def main(argv=None,log=print):
     parser.add_argument('--serial')
     parser.add_argument('--adb-port',type=int,default=5037)
     project=Path(__file__).resolve().parents[1]
-    binary=project/'dist/alice-homebrew-linux-arm64'
-    if not binary.is_file(): binary=project/'bin/alice-homebrew-linux-arm64'
-    parser.add_argument('--binary',type=Path,default=binary)
+    parser.add_argument('--binary',type=Path,help='service binary; chosen by the station architecture when omitted')
+    parser.add_argument('--platform',help='station profile when auto-detection fails, e.g. yandexmini_2')
     parser.add_argument('--install',action='store_true')
     parser.add_argument('--autostart',action='store_true')
     args=parser.parse_args(argv)
@@ -57,9 +70,18 @@ def main(argv=None,log=print):
             if not lines or lines[-1]!='__ALICE_EXIT__:0':
                 raise RuntimeError('Speaker command failed: '+output)
             return '\n'.join(lines[:-1]).strip()
-        if 'amlogic' not in shell('cat /proc/device-tree/compatible').lower() or shell('uname -m')!='aarch64':
-            raise RuntimeError('This installer targets the ARM64 Amlogic Mini 1')
         if 'uid=0' not in shell('id'): raise RuntimeError('ADB root is required')
+        machine=shell('uname -m')
+        if machine not in BINARIES: raise RuntimeError(f'Unsupported station CPU: {machine}')
+        identity=shell(r'cat /proc/device-tree/compatible 2>/dev/null | tr "\000" "\n"; getprop ro.product.device 2>/dev/null; getprop ro.product.model 2>/dev/null; true')
+        platform=args.platform or detect_platform(identity)
+        if not platform: raise RuntimeError('Station model not recognized; pass --platform (see README). Identity: '+' '.join(identity.split())[:200])
+        if args.platform and args.platform not in dict(PLATFORMS): raise RuntimeError('Unknown --platform '+args.platform)
+        log(f'Station: {platform} ({machine})')
+        if not args.binary:
+            name=BINARIES[machine]
+            args.binary=next((p for p in (project/'dist'/name,project/'bin'/name) if p.is_file()),project/'bin'/name)
+        if not args.binary.is_file(): raise RuntimeError(f'Build {args.binary.name} first (scripts/build-distribution.py)')
         rows=shell('df -k /data').splitlines()
         values=rows[-1].split()
         if len(values)<6 or not values[-1].startswith('/'): raise RuntimeError('Cannot read /data free space')
@@ -84,6 +106,8 @@ def main(argv=None,log=print):
             raise RuntimeError('Transferred binary checksum mismatch; the existing service was not changed')
         shell(f'if test -x {root}/start.sh; then {root}/start.sh stop; fi')
         shell(f'chmod 700 {root}/alice-homebrew.new {root}/start.sh.new && mv {root}/alice-homebrew.new {root}/alice-homebrew && mv {root}/start.sh.new {root}/start.sh')
+        # A manual profile must survive restarts; auto-detection needs no file.
+        shell(f'echo {platform} > {root}/platform' if args.platform else f'rm -f {root}/platform')
         if args.autostart:
             hook=Path(__file__).resolve().parent/'S98alice-homebrew'
             run(target+['push',str(hook),root+'/S98alice-homebrew'])

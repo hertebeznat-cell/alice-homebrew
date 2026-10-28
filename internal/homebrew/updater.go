@@ -273,13 +273,18 @@ func validateUpdateBinary(path, arch string) error {
 		return e
 	}
 	defer f.Close()
-	machine := elf.EM_AARCH64
-	if arch == "amd64" {
+	machine, class := elf.EM_AARCH64, elf.ELFCLASS64
+	switch arch {
+	case "arm64":
+	case "amd64":
 		machine = elf.EM_X86_64
-	} else if arch != "arm64" {
+	case "arm":
+		// 32-bit stations (Station Street, JBL Link Music).
+		machine, class = elf.EM_ARM, elf.ELFCLASS32
+	default:
 		return errors.New("unsupported update architecture")
 	}
-	if f.Class != elf.ELFCLASS64 || f.Data != elf.ELFDATA2LSB || f.Machine != machine || f.Type != elf.ET_EXEC {
+	if f.Class != class || f.Data != elf.ELFDATA2LSB || f.Machine != machine || f.Type != elf.ET_EXEC {
 		return errors.New("manager update is not a matching static Linux ELF")
 	}
 	for _, p := range f.Progs {

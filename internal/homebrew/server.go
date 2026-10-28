@@ -95,7 +95,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	if r.URL.Path == "/" || r.URL.Path == "/app.js" || r.URL.Path == "/settings.js" || r.URL.Path == "/settings.css" || r.URL.Path == "/style.css" {
+	if r.URL.Path == "/" || r.URL.Path == "/app.js" || r.URL.Path == "/kit.js" || r.URL.Path == "/kit.css" || r.URL.Path == "/style.css" {
 		if r.Method != "GET" {
 			w.WriteHeader(405)
 			return
@@ -134,7 +134,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ready = s.Manager.ready
 			s.Manager.mu.Unlock()
 		}
-		jsonResponse(w, map[string]any{"mode": mode, "authenticated": s.authed(r), "access_code_required": s.Token != "", "public_key": pub, "version": Version, "ready": ready})
+		jsonResponse(w, map[string]any{"mode": mode, "authenticated": s.authed(r), "access_code_required": s.Token != "", "public_key": pub, "version": Version, "codename": Codename, "commit": Commit, "ready": ready})
 		return
 	}
 	if r.URL.Path == "/api/login" && r.Method == "POST" {
@@ -278,6 +278,55 @@ func (s *Server) stationRequest(w http.ResponseWriter, r *http.Request) error {
 		}
 		jsonResponse(w, m.Updater.Status())
 		return nil
+	case r.URL.Path == "/api/yam" && r.Method == "GET":
+		if m.Yam == nil {
+			return errors.New("yam support unavailable")
+		}
+		v := m.Yam.Snapshot()
+		v["device"] = m.Device
+		jsonResponse(w, v)
+		return nil
+	case r.URL.Path == "/api/yam/refresh" && r.Method == "POST":
+		if m.Yam == nil {
+			return errors.New("yam support unavailable")
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 75*time.Second)
+		defer cancel()
+		m.Yam.Refresh(ctx)
+		jsonResponse(w, m.Yam.Snapshot())
+		return nil
+	case r.URL.Path == "/api/yam/local" && r.Method == "POST":
+		if m.Yam == nil {
+			return errors.New("yam support unavailable")
+		}
+		raw, e := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxYamUpload))
+		if e != nil {
+			return e
+		}
+		job, e := m.Yam.StartLocal(r.URL.Query().Get("file"), raw)
+		if e != nil {
+			return e
+		}
+		jsonResponse(w, job)
+		return nil
+	case r.URL.Path == "/api/yam/jobs" && r.Method == "POST":
+		if m.Yam == nil {
+			return errors.New("yam support unavailable")
+		}
+		var q struct {
+			Action   string `json:"action"`
+			Registry string `json:"registry"`
+			Name     string `json:"name"`
+		}
+		if e := requestJSON(w, r, &q); e != nil {
+			return e
+		}
+		job, e := m.Yam.Start(q.Action, q.Registry, q.Name)
+		if e != nil {
+			return e
+		}
+		jsonResponse(w, job)
+		return nil
 	case r.URL.Path == "/api/hardware" && r.Method == "GET":
 		jsonResponse(w, HardwareInventory())
 		return nil
@@ -419,7 +468,18 @@ func (s *Server) stationRequest(w http.ResponseWriter, r *http.Request) error {
 			return e
 		}
 	case r.URL.Path == "/api/catalog/refresh" && r.Method == "POST":
-		if e := m.Refresh(r.Context()); e != nil {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			if m.Yam != nil {
+				ctx, cancel := context.WithTimeout(r.Context(), 75*time.Second)
+				defer cancel()
+				m.Yam.Refresh(ctx)
+			}
+		}()
+		e := m.Refresh(r.Context())
+		<-done
+		if e != nil {
 			return e
 		}
 	case r.URL.Path == "/api/catalog/inspect" && r.Method == "POST":

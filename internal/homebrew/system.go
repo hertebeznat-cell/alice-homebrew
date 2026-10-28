@@ -115,7 +115,7 @@ func (m *Manager) systemLocked() map[string]any {
 	var heap runtime.MemStats
 	runtime.ReadMemStats(&heap)
 	memory.GoHeapBytes = heap.HeapAlloc
-	return map[string]any{"disk": d, "memory": memory, "version": Version, "os": runtime.GOOS, "architecture": runtime.GOARCH, "cpu_count": runtime.NumCPU(), "plugin_count": len(m.state.Plugins), "running_count": len(m.running), "max_plugins": 8, "max_running": 4, "hardware_led": m.Ring.Snapshot()["hardware"]}
+	return map[string]any{"disk": d, "memory": memory, "version": Version, "os": runtime.GOOS, "architecture": runtime.GOARCH, "cpu_count": runtime.NumCPU(), "plugin_count": len(m.state.Plugins), "running_count": len(m.running), "max_plugins": 8, "max_running": 4, "hardware_led": m.Ring.Snapshot()["hardware"], "device": m.Device}
 }
 func (m *Manager) System() map[string]any { m.mu.Lock(); defer m.mu.Unlock(); return m.systemLocked() }
 func (m *Manager) Status() map[string]any {
@@ -131,5 +131,9 @@ func (m *Manager) Status() map[string]any {
 		}
 		plugins = append(plugins, map[string]any{"id": id, "enabled": p.Enabled, "last_error": p.LastError, "wasm_memory_bytes": memory, "logs": boundedLogLines(logs)})
 	}
-	return map[string]any{"plugins": plugins, "system": m.systemLocked(), "updates": m.updateStatus()}
+	status := map[string]any{"plugins": plugins, "system": m.systemLocked(), "updates": m.updateStatus()}
+	if m.Yam != nil {
+		status["yam"] = m.Yam.Jobs()
+	}
+	return status
 }

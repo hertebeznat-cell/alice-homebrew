@@ -49,6 +49,11 @@ type ticket struct {
 	Expires  time.Time
 	SourceID string
 }
+
+// catalogRefreshInterval is how often source catalogs and yam registries are
+// fetched in the background.
+const catalogRefreshInterval = 3 * time.Hour
+
 type Manager struct {
 	mu              sync.Mutex
 	dir             string
@@ -63,6 +68,8 @@ type Manager struct {
 	catalogs        map[string]*Catalog
 	diskProbe       func(string) DiskUsage
 	Updater         *Updater
+	Device          DeviceProfile
+	Yam             *Yam
 	ready           bool
 }
 
@@ -142,7 +149,8 @@ func (m *Manager) Stage(raw []byte, reviewed bool) (map[string]any, error) {
 	}
 	id := randomID()
 	m.tickets[id] = ticket{Package: p, Reviewed: reviewed, Expires: time.Now().Add(10 * time.Minute)}
-	return map[string]any{"ticket": id, "manifest": p.Manifest, "sha256": p.SHA256, "bytes": len(raw), "reviewed": reviewed, "storage": m.storagePlanLocked(p.RequiredStorage())}, nil
+	blocking, note := m.Device.Compatibility(p.Manifest)
+	return map[string]any{"ticket": id, "manifest": p.Manifest, "sha256": p.SHA256, "bytes": len(raw), "reviewed": reviewed, "storage": m.storagePlanLocked(p.RequiredStorage()), "incompatible": blocking, "compatibility_note": note}, nil
 }
 func (m *Manager) Install(id string, permissions []string, acknowledgeLocal bool) error {
 	return m.install(id, permissions, acknowledgeLocal, "", "", false)
@@ -174,6 +182,9 @@ func (m *Manager) install(id string, permissions []string, acknowledgeLocal bool
 		} else {
 			permissions = p.Manifest.Permissions
 		}
+	}
+	if reason, _ := m.Device.Compatibility(p.Manifest); reason != "" {
+		return errors.New("plugin is not compatible with " + m.Device.ID + ": " + reason)
 	}
 	if !accepted(p.Manifest, permissions) {
 		return errors.New("confirm every requested permission")
@@ -502,7 +513,7 @@ func (m *Manager) Snapshot() map[string]any {
 			sources = append(sources, clone(s))
 		}
 	}
-	return map[string]any{"updates": m.updateStatus(), "plugins": plugins, "settings": m.state.Settings, "sources": sources, "catalog": catalog, "catalog_error": m.CatalogError, "ring": m.Ring.Snapshot(), "system": m.systemLocked(), "free_bytes": m.diskProbe(m.dir).AvailableBytes, "version": Version}
+	return map[string]any{"updates": m.updateStatus(), "plugins": plugins, "settings": m.state.Settings, "sources": sources, "catalog": catalog, "catalog_error": m.CatalogError, "ring": m.Ring.Snapshot(), "system": m.systemLocked(), "device": m.Device, "free_bytes": m.diskProbe(m.dir).AvailableBytes, "version": Version}
 }
 func (m *Manager) Run(ctx context.Context) {
 	go m.Audio.Serve(ctx)
@@ -519,6 +530,28 @@ func (m *Manager) Run(ctx context.Context) {
 	m.ready = true
 	m.mu.Unlock()
 	go func() { _ = m.RefreshAll(ctx) }()
+	if m.Yam != nil {
+		go func() {
+			m.Yam.Refresh(ctx)
+			m.Yam.AutoSetup(ctx, filepath.Join(m.dir, "yam-autosetup.json"))
+		}()
+	}
+	// New plugins and yam packages show up without pressing Refresh.
+	go func() {
+		t := time.NewTicker(catalogRefreshInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				_ = m.RefreshAll(ctx)
+				if m.Yam != nil {
+					m.Yam.Refresh(ctx)
+				}
+			}
+		}
+	}()
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 	boot := time.Now()

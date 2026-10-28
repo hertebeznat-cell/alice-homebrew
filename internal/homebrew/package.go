@@ -55,6 +55,7 @@ type Manifest struct {
 	API            int      `json:"api"`
 	Engine         string   `json:"engine,omitempty"`
 	Capabilities   []string `json:"capabilities,omitempty"`
+	Devices        []string `json:"devices,omitempty"`
 	RuntimeStorage uint64   `json:"runtime_storage_bytes,omitempty"`
 	Permissions    []string `json:"permissions"`
 	Config         []Field  `json:"config"`
@@ -96,6 +97,14 @@ func ValidateManifest(m Manifest) error {
 	for _, c := range m.Capabilities {
 		if !idRE.MatchString(c) || len(c) > 64 {
 			return errors.New("invalid capability")
+		}
+	}
+	if len(m.Devices) > 16 {
+		return errors.New("too many devices")
+	}
+	for _, d := range m.Devices {
+		if _, ok := platformByID(d); !ok {
+			return fmt.Errorf("unknown device: %s", d)
 		}
 	}
 	if m.Engine != "native" && len(m.Capabilities) > 0 {

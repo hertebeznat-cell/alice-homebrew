@@ -32,7 +32,13 @@ case "${1:-start}" in
     fi
     # Keep one bounded startup log; runtime plugin logs are bounded in memory.
     if [ -f "$BASE/service.log" ]; then mv "$BASE/service.log" "$BASE/service.previous.log"; fi
-    setsid "$BASE/alice-homebrew" station --listen :8088 --data "$BASE/state" --hardware-led --managed \
+    PLATFORM_ARG=
+    if [ -f "$BASE/platform" ]; then
+        value=$(cat "$BASE/platform")
+        case "$value" in ''|*[!a-z0-9_]*) ;; *) PLATFORM_ARG="--platform=$value";; esac
+    fi
+    # --hardware-led only takes effect on models with a verified LED driver (Mini 1).
+    setsid "$BASE/alice-homebrew" station --listen :8088 --data "$BASE/state" --hardware-led --managed $PLATFORM_ARG \
       </dev/null >"$BASE/service.log" 2>&1 &
     echo "$!" > "$PID"
     sleep 1

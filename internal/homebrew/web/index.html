@@ -1,3 +1,37 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Alice Homebrew</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/settings.css"><script src="/settings.js" defer></script><script src="/app.js" defer></script></head>
-<body><div class="shell"><aside class="sidebar"><a class="brand" href="/"><span class="brand-mark">a</span><span>Alice<span class="brand-sub">HOMEBREW</span></span></a><div class="side-label" id="nav-label">ВАША КОЛОНКА</div><nav id="navigation"></nav><div class="side-bottom"><span class="tiny-dot"></span><span id="connection">Локальное управление</span><small id="manager-version">ALICE HOMEBREW</small></div></aside><main><header><span class="eyebrow" id="eyebrow">СОЗДАЙ СВОЮ АЛИСУ</span><div class="header-tools"><select id="language" aria-label="Language"><option value="ru">Русский</option><option value="en">English</option></select><button class="quiet" id="logout">Выйти</button></div></header><div id="content"></div></main></div><div id="toast" role="status" class="toast hidden"></div><dialog id="login"><form id="login-form"><span class="eyebrow">ALICE HOMEBREW</span><h2 id="login-title">Подключиться к колонке</h2><p id="login-help">Введите код доступа из admin-token.txt в папке сервиса.</p><label id="login-label" for="access-code">Код доступа</label><input id="access-code" type="password" autocomplete="current-password" required><p id="login-error" class="error"></p><button class="primary" id="login-submit" type="submit">Подключиться</button><button class="quiet hidden" id="guest" type="button">Отправить заявку без входа</button></form></dialog><dialog id="confirm"><div id="confirm-content"></div></dialog></body></html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#14100c">
+<title>Alice Homebrew</title>
+<link rel="stylesheet" href="/kit.css">
+<link rel="stylesheet" href="/style.css">
+<script src="/kit.js" defer></script>
+<script src="/app.js" defer></script>
+</head>
+<body>
+<a class="skip ui-dim ui-focus" href="#content" id="skip">К содержимому</a>
+<header class="topbar" data-ui-edge>
+  <div class="topbar-start">
+    <a class="brand ui-dim ui-focus" href="#/plugins" aria-label="Alice Homebrew">
+      <span class="ring-mark" id="brand-ring" aria-hidden="true" data-ui-edge></span>
+      <span class="brand-name" data-ui-edge>Alice Homebrew</span>
+    </a>
+    <span class="device" id="device"></span>
+  </div>
+  <div class="topbar-end">
+    <nav class="tabs ui-segmented" id="tabs" aria-label="Разделы"></nav>
+    <div class="lang ui-segmented" id="lang" role="group" aria-label="Language">
+      <button type="button" data-lang="ru" aria-pressed="true">RU</button>
+      <button type="button" data-lang="en" aria-pressed="false">EN</button>
+    </div>
+  </div>
+</header>
+<main id="content" tabindex="-1"></main>
+<div class="drop-veil" id="drop-veil" aria-hidden="true"><div class="drop-veil-box"><span class="drop-glyph"></span><strong id="drop-veil-text">Отпустите .aliceplugin, чтобы проверить пакет</strong></div></div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<dialog class="dialog ui-pop-in" id="dialog" aria-labelledby="dialog-title"><div id="dialog-body"></div></dialog>
+</body>
+</html>
