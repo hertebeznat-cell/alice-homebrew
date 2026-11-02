@@ -5,7 +5,8 @@ root=Path(__file__).resolve().parents[2]
 plugin=Path(__file__).resolve().parent
 receiver=plugin/'service/receiver-arm64'
 manifest=json.loads((plugin/'manifest.json').read_text(encoding='utf-8'))
-manifest['runtime_storage_bytes']=receiver.stat().st_size+(1<<20)
+# Allow for the private firmware ALSA compatibility copy and its atomic replacement.
+manifest['runtime_storage_bytes']=receiver.stat().st_size+(2<<20)
 env=os.environ.copy();env.update(CGO_ENABLED='0',GOOS='linux',GOARCH='arm64')
 subprocess.run(['go','build','-tags=airplay','-trimpath','-ldflags=-s -w','-o',str(plugin/'plugin.elf'),'./plugins/airplay/service'],cwd=root,env=env,check=True)
 manifest['module_sha256']=hashlib.sha256((plugin/'plugin.elf').read_bytes()).hexdigest()

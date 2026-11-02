@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"alicehomebrew/plugins/airplay/internal/alsacompat"
 )
 
 const sharedALSAConfig = `</usr/share/alsa/alsa.conf>
@@ -31,6 +33,14 @@ func newSharedPlayback(root string) (*sharedPlayback, error) {
 		}
 	}
 	config := filepath.Join(root, "shared-alsa.conf")
+	compat, err := alsacompat.Prepare(root, "/system/vendor/quasar/libs/libasound.so.2", "/system/workdir/bin/aplay")
+	if err != nil {
+		return nil, fmt.Errorf("prepare firmware aplay compatibility: %w", err)
+	}
+	libraryPath := "/system/vendor/quasar/libs:/system/workdir/lib"
+	if compat != "" {
+		libraryPath = compat + ":" + libraryPath
+	}
 	if err := os.WriteFile(config, []byte(sharedALSAConfig), 0600); err != nil {
 		return nil, err
 	}
@@ -42,7 +52,7 @@ func newSharedPlayback(root string) (*sharedPlayback, error) {
 			return nil, errors.New("Alice shared mixer is unavailable; use direct mode only if Alice is disabled")
 		}
 		cmd := exec.Command("/system/workdir/bin/aplay", "-q", "-D", "alice_shared", "-t", "raw", "-f", "S16_LE", "-r", "44100", "-c", "2")
-		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH=/system/vendor/quasar/libs:/system/workdir/lib", "ALSA_CONFIG_PATH="+config)
+		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+libraryPath, "ALSA_CONFIG_PATH="+config)
 		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
