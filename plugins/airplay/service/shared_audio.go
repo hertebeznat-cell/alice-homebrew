@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,10 +17,10 @@ import (
 )
 
 const sharedALSAConfig = `</usr/share/alsa/alsa.conf>
-defaults.pcm.rate_converter "linear"
+defaults.pcm.rate_converter "%s"
 pcm.alice_shared {
  type plug
- rate_converter "linear"
+ rate_converter "%s"
  slave.pcm "dmixer"
 }
 `
@@ -41,7 +42,17 @@ func newSharedPlayback(root string) (*sharedPlayback, error) {
 	if compat != "" {
 		libraryPath = compat + ":" + libraryPath
 	}
-	if err := os.WriteFile(config, []byte(sharedALSAConfig), 0600); err != nil {
+	rateDir, err := alsacompat.PrepareRate(root, compat, "/system/workdir/lib/libsamplerate.so.0.1.8", "/system/workdir/lib/libasound_module_rate_samplerate_medium.so")
+	if err != nil {
+		return nil, fmt.Errorf("prepare firmware sinc converter: %w", err)
+	}
+	converter := "linear"
+	if rateDir != "" {
+		converter = "samplerate_medium"
+		libraryPath = rateDir + ":" + libraryPath
+		log.Print("AirPlay shared audio: libsamplerate sinc-medium converter")
+	}
+	if err := os.WriteFile(config, []byte(fmt.Sprintf(sharedALSAConfig, converter, converter)), 0600); err != nil {
 		return nil, err
 	}
 	p := &sharedPlayback{done: make(chan struct{})}
