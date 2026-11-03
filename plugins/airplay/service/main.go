@@ -10,14 +10,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/hashicorp/mdns"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -26,6 +23,9 @@ import (
 
 //go:embed receiver-arm64
 var receiver []byte
+
+// How often the advertised Wi-Fi address is re-checked.
+const networkCheckInterval = 5 * time.Second
 
 type configuration struct {
 	Name      string  `json:"name"`
@@ -43,10 +43,8 @@ func configText(c configuration) (string, error) {
 	if c.Port < 1024 || c.Port > 65535 || c.MaxVolume < -60 || c.MaxVolume > 0 {
 		return "", errors.New("invalid port or volume cap")
 	}
-	switch c.Device {
-	case "plughw:0,0", "plughw:0,1":
-	default:
-		return "", errors.New("choose an available Mini 1 playback PCM")
+	if err := validOutput(c.Device); err != nil {
+		return "", err
 	}
 	backend := "stdout"
 	if c.AudioMode == "direct" {
@@ -129,8 +127,13 @@ func run() error {
 		return e
 	}
 	alsaConfig := filepath.Join(root, "alsa.conf")
-	device := strings.TrimPrefix(c.Device, "plughw:0,")
-	alsa := fmt.Sprintf("pcm.alice_out { type plug slave.pcm { type hw card 0 device %s } }\n", device)
+	pcmList, _ := os.ReadFile("/proc/asound/pcm")
+	output, e := directDevice(c.Device, string(pcmList))
+	if e != nil && c.AudioMode == "direct" {
+		return e
+	}
+	card, device, _ := strings.Cut(output, ",")
+	alsa := fmt.Sprintf("pcm.alice_out { type plug slave.pcm { type hw card %s device %s } }\n", card, device)
 	if e = os.WriteFile(alsaConfig, []byte(alsa), 0600); e != nil {
 		return e
 	}
@@ -167,13 +170,10 @@ func run() error {
 	defer signal.Stop(signals)
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
-	var server *mdns.Server
-	var last []byte
-	defer func() {
-		if server != nil {
-			server.Shutdown()
-		}
-	}()
+	var ads advertiser
+	defer ads.stop()
+	var current []byte
+	var checked time.Time
 	for {
 		select {
 		case <-signals:
@@ -183,57 +183,35 @@ func run() error {
 				return errors.New("receiver exited")
 			}
 			return e
-		case <-tick.C:
-			current, e := os.ReadFile(discovery)
-			if e != nil || bytes.Equal(current, last) {
+		case now := <-tick.C:
+			next, e := os.ReadFile(discovery)
+			if e != nil {
 				continue
 			}
-			name, service, port, txt, e := descriptor(current)
+			// Re-check the network every few seconds even when shairport's
+			// description is unchanged: Wi-Fi and DHCP change under us.
+			if bytes.Equal(next, current) && now.Sub(checked) < networkCheckInterval {
+				continue
+			}
+			name, service, port, txt, e := descriptor(next)
 			if e != nil {
 				return e
 			}
-			ips := []net.IP{}
-			interfaces, _ := net.Interfaces()
-			// Prefer the speaker's Wi-Fi over USB/RNDIS addresses that an iPhone
-			// cannot reach. Advertise one interface and its matching addresses.
-			sort.SliceStable(interfaces, func(i, j int) bool {
-				return strings.HasPrefix(interfaces[i].Name, "wl") && !strings.HasPrefix(interfaces[j].Name, "wl")
-			})
-			var selectedInterface *net.Interface
-			for _, iface := range interfaces {
-				if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagMulticast == 0 {
-					continue
-				}
-				addresses, _ := iface.Addrs()
-				for _, a := range addresses {
-					ip, _, err := net.ParseCIDR(a.String())
-					if err == nil && ip.To4() != nil && !ip.IsLoopback() {
-						ips = append(ips, ip.To4())
-					}
-				}
-				if len(ips) > 0 {
-					copy := iface
-					selectedInterface = &copy
-					break
-				}
-			}
-			if len(ips) == 0 {
-				return errors.New("no LAN address available for AirPlay")
-			}
-			hostname := "alice-" + strings.ToLower(strings.Split(name, "@")[0]) + ".local."
-			zone, e := mdns.NewMDNSService(name, service, "local.", hostname, port, ips, txt)
+			current, checked = append(current[:0], next...), now
+			changed, e := ads.update(name, service, port, txt)
 			if e != nil {
 				return e
 			}
-			if server != nil {
-				server.Shutdown()
+			if changed {
+				log.Printf("AirPlay audio ready: %s, TCP %d, mode %s", c.Name, port, modeName(c, output))
 			}
-			server, e = mdns.NewServer(&mdns.Config{Zone: zone, Iface: selectedInterface})
-			if e != nil {
-				return e
-			}
-			last = append(last[:0], current...)
-			log.Printf("AirPlay audio ready: %s, TCP %d, output %s", c.Name, port, c.Device)
 		}
 	}
+}
+
+func modeName(c configuration, output string) string {
+	if c.AudioMode == "direct" {
+		return "direct plughw:" + output
+	}
+	return "shared with Alice"
 }

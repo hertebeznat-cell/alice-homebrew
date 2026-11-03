@@ -1,7 +1,7 @@
 {
   "format": 1,
   "id": "airplay",
-  "version": "1.0.0-beta.3",
+  "version": "1.0.0-beta.4",
   "api": 2,
   "engine": "native",
   "title": {
@@ -76,20 +76,27 @@
         "en": "Output for direct mode"
       },
       "type": "select",
-      "default": "plughw:0,0",
+      "default": "auto",
       "options": [
+        {
+          "value": "auto",
+          "label": {
+            "ru": "Автоматически",
+            "en": "Automatic"
+          }
+        },
         {
           "value": "plughw:0,0",
           "label": {
-            "ru": "TDM-B · PCM 0",
-            "en": "TDM-B · PCM 0"
+            "ru": "Карта 0 · PCM 0 (Мини 1: TDM-B)",
+            "en": "Card 0 · PCM 0 (Mini 1: TDM-B)"
           }
         },
         {
           "value": "plughw:0,1",
           "label": {
-            "ru": "TDM-C · PCM 1",
-            "en": "TDM-C · PCM 1"
+            "ru": "Карта 0 · PCM 1 (Мини 1: TDM-C)",
+            "en": "Card 0 · PCM 1 (Mini 1: TDM-C)"
           }
         }
       ]
@@ -119,6 +126,6 @@
       "step": 1
     }
   ],
-  "module_sha256": "eb371b0794ed6e346c7564b28c8c70eef3564248785dfa650d583b6732d8b814",
+  "module_sha256": "f72fd1b8c950ee2aeae38087e2c21fc94afa5fe66a3bd368c8d3bcb90f25dd6f",
   "runtime_storage_bytes": 6244712
 }
