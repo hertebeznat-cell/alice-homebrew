@@ -12,7 +12,7 @@ The firmware player has unversioned ALSA imports. Its library exports hidden leg
 - A private copy clears the names of 65 hidden legacy duplicate function symbols. Current exports, executable code, version tables and dmix shared-memory layout remain unchanged. No firmware binary is included in the repository or plugin.
 - Only the firmware `aplay` child receives the private `LD_LIBRARY_PATH`. Alice and other processes keep the original library. Direct audio mode is unchanged.
 - Unknown file pairs keep the prior shared-mode behavior. Errors while repairing the verified pair are reported rather than silently starting the known broken path.
-- The private file is written atomically, mode `0600`, inside the plugin's data directory. An identical copy is reused. The build reserves an extra MiB for it and its temporary replacement.
+- The private file is written atomically, mode `0600`, inside the plugin's data directory. An identical copy is reused. The combined ABI/SRC build reserves 5 MiB beyond the receiver for private libraries, atomic replacement and headroom.
 
 ## Verification
 

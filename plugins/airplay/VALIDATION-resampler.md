@@ -1,6 +1,6 @@
 # AirPlay shared playback: sinc resampling on Mini 1
 
-This builds on the firmware ALSA ABI repair in PR #1. It addresses muffled
+This builds on the included firmware ALSA ABI repair. It addresses muffled
 treble after shared playback starts working.
 
 ## Scope
@@ -17,7 +17,7 @@ to preserve offsets. The `/smixer` string, executable code and dmix ABI are
 unchanged. Prepend this copy and the full `libsamplerate.so.0` only to the aplay
 child's library path, so the reduced vendor libsamplerate cannot shadow it.
 
-Require PR #1's successful ABI repair and these SHA-256 fingerprints:
+Require the successful ABI repair and these SHA-256 fingerprints:
 
 - Repaired ALSA: `fa6d683ab80a5dcc6edf240aa4148495d074b847f79e731a5c1599cd8ee84d44`.
 - Full libsamplerate: `015cb1d352cd4423d902a54fc3a875ab1910f7c1e02a3740d49a7c5c612ada8b`.
@@ -66,7 +66,7 @@ Actual AirPlay playback mapped this same ALSA copy, the full private
 libsamplerate and firmware rate module. The owner confirmed improved music
 quality and Alice's audible reply during playback.
 
-The PR adapts that validated library/configuration change to PR #1's helper;
+The PR adapts that validated library/configuration change to the ABI helper;
 its exact output hash is checked using private fixtures. The PR source
 adaptation passes unit tests, service tests, vet and a Linux ARM64 cross-build.
 Reboot, long-duration load, AirPlay 2 and other station models are unverified.
@@ -92,5 +92,11 @@ go test ./plugins/airplay/internal/alsacompat
 ```
 
 Service tests and cross-builds require the existing `receiver-arm64` artifact
-described in the README. On macOS, full `go test ./...` retains the same nine
-pre-existing storage failures documented in PR #1; the AirPlay tests pass.
+described in the README. `go test -tags=airplay ./plugins/airplay/service` also
+checks beta.4 route selection: unknown firmware retains linear conversion,
+while the optional private fixtures verify sinc selection, missing-SRC fallback
+and the firmware default PCM without a Mini 1 mixer. Other stations keep the
+upstream route and network-discovery implementation.
+
+On macOS, full `go test ./...` retains the same nine pre-existing storage
+failures documented in `VALIDATION-alsa-compat.md`; the AirPlay tests pass.

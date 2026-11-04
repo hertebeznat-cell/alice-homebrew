@@ -9,11 +9,8 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
 	"time"
-
-	"alicehomebrew/plugins/airplay/internal/alsacompat"
 )
 
 const sharedALSAConfig = `</usr/share/alsa/alsa.conf>
@@ -25,45 +22,25 @@ pcm.alice_shared {
 }
 `
 
-// Use the firmware's aplay and libasound together. Its dmix shared-memory ABI
-// must match Alice's library; mixing it with the embedded modern ALSA is unsafe.
+// Play through the firmware's own aplay and libasound (see audio_route.go):
+// mixing the stock dmix shared memory with the embedded modern ALSA is unsafe.
 func newSharedPlayback(root string) (*sharedPlayback, error) {
-	for _, path := range []string{"/system/workdir/bin/aplay", "/system/vendor/quasar/libs/libasound.so.2", "/usr/share/alsa/alsa.conf"} {
-		if _, err := os.Stat(path); err != nil {
-			return nil, fmt.Errorf("shared Alice audio requires firmware file %s: %w", path, err)
-		}
-	}
-	config := filepath.Join(root, "shared-alsa.conf")
-	compat, err := alsacompat.Prepare(root, "/system/vendor/quasar/libs/libasound.so.2", "/system/workdir/bin/aplay")
+	route, err := findSharedRoute("/", root)
 	if err != nil {
-		return nil, fmt.Errorf("prepare firmware aplay compatibility: %w", err)
-	}
-	libraryPath := "/system/vendor/quasar/libs:/system/workdir/lib"
-	if compat != "" {
-		libraryPath = compat + ":" + libraryPath
-	}
-	rateDir, err := alsacompat.PrepareRate(root, compat, "/system/workdir/lib/libsamplerate.so.0.1.8", "/system/workdir/lib/libasound_module_rate_samplerate_medium.so")
-	if err != nil {
-		return nil, fmt.Errorf("prepare firmware sinc converter: %w", err)
-	}
-	converter := "linear"
-	if rateDir != "" {
-		converter = "samplerate_medium"
-		libraryPath = rateDir + ":" + libraryPath
-		log.Print("AirPlay shared audio: libsamplerate sinc-medium converter")
-	}
-	if err := os.WriteFile(config, []byte(fmt.Sprintf(sharedALSAConfig, converter, converter)), 0600); err != nil {
 		return nil, err
 	}
+	log.Printf("AirPlay shared audio: %s", route.Summary)
 	p := &sharedPlayback{done: make(chan struct{})}
 	p.open = func() (io.WriteCloser, error) {
-		// The firmware creates this route during boot. Refuse an exclusive
-		// hardware fallback if the shared route is not ready.
-		if _, err := os.Stat("/tmp/alsa/dmixer.conf"); err != nil {
-			return nil, errors.New("Alice shared mixer is unavailable; use direct mode only if Alice is disabled")
+		// Mini 1 builds its mixer route during boot. Refuse an exclusive
+		// hardware fallback if that route is not ready yet.
+		if route.Device == "alice_shared" {
+			if _, err := os.Stat(mini1MixerRoute); err != nil {
+				return nil, errors.New("Alice shared mixer is unavailable; use direct mode only if Alice is disabled")
+			}
 		}
-		cmd := exec.Command("/system/workdir/bin/aplay", "-q", "-D", "alice_shared", "-t", "raw", "-f", "S16_LE", "-r", "44100", "-c", "2")
-		cmd.Env = append(os.Environ(), "LD_LIBRARY_PATH="+libraryPath, "ALSA_CONFIG_PATH="+config)
+		cmd := exec.Command(route.Player, "-q", "-D", route.Device, "-t", "raw", "-f", "S16_LE", "-r", "44100", "-c", "2")
+		cmd.Env = append(os.Environ(), route.Env...)
 		cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 		stdin, err := cmd.StdinPipe()
 		if err != nil {
