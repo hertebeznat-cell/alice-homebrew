@@ -14,10 +14,10 @@ import (
 )
 
 const sharedALSAConfig = `</usr/share/alsa/alsa.conf>
-defaults.pcm.rate_converter "linear"
+defaults.pcm.rate_converter "%s"
 pcm.alice_shared {
  type plug
- rate_converter "linear"
+ rate_converter "%s"
  slave.pcm "dmixer"
 }
 `

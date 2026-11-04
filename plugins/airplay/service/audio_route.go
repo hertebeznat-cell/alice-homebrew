@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"alicehomebrew/plugins/airplay/internal/alsacompat"
 )
 
 // Station Mini 1 ships aplay and libasound outside the standard paths and
@@ -18,6 +20,7 @@ import (
 // and route their ALSA "default" PCM through the stock mixer themselves.
 const (
 	mini1Aplay       = "/system/workdir/bin/aplay"
+	mini1ALSA        = "/system/vendor/quasar/libs/libasound.so.2"
 	mini1Libraries   = "/system/vendor/quasar/libs:/system/workdir/lib"
 	mini1MixerRoute  = "/tmp/alsa/dmixer.conf"
 	firmwareALSAConf = "/usr/share/alsa/alsa.conf"
@@ -54,17 +57,42 @@ func findSharedRoute(root, pluginData string) (*sharedRoute, error) {
 			"choose \"Direct output\" in the plugin settings")
 	}
 	route := &sharedRoute{Player: filepath.Join(root, player), Device: "default"}
+	converter := "linear"
 	if player == mini1Aplay {
-		route.Env = append(route.Env, "LD_LIBRARY_PATH="+mini1Libraries)
+		libraryPath := mini1Libraries
+		if exists(mini1ALSA) {
+			compat, err := alsacompat.Prepare(pluginData, filepath.Join(root, mini1ALSA), route.Player)
+			if err != nil {
+				return nil, fmt.Errorf("prepare firmware aplay compatibility: %w", err)
+			}
+			if compat != "" {
+				libraryPath = compat + ":" + libraryPath
+			}
+			// Only the custom Mini 1 mixer route selects our converter. Keep
+			// the firmware's default PCM and other stations' routing intact.
+			if exists(mini1MixerRoute) && exists(firmwareALSAConf) {
+				rateDir, err := alsacompat.PrepareRate(pluginData, compat,
+					filepath.Join(root, "/system/workdir/lib/libsamplerate.so.0.1.8"),
+					filepath.Join(root, "/system/workdir/lib/libasound_module_rate_samplerate_medium.so"))
+				if err != nil {
+					return nil, fmt.Errorf("prepare firmware sinc converter: %w", err)
+				}
+				if rateDir != "" {
+					converter = "samplerate_medium"
+					libraryPath = rateDir + ":" + libraryPath
+				}
+			}
+		}
+		route.Env = append(route.Env, "LD_LIBRARY_PATH="+libraryPath)
 	}
 	if exists(mini1MixerRoute) && exists(firmwareALSAConf) {
 		config := filepath.Join(pluginData, "shared-alsa.conf")
-		if err := os.WriteFile(config, []byte(sharedALSAConfig), 0600); err != nil {
+		if err := os.WriteFile(config, []byte(fmt.Sprintf(sharedALSAConfig, converter, converter)), 0600); err != nil {
 			return nil, err
 		}
 		route.Device = "alice_shared"
 		route.Env = append(route.Env, "ALSA_CONFIG_PATH="+config)
-		route.Summary = player + " → Alice mixer (dmixer)"
+		route.Summary = player + " → Alice mixer (dmixer), converter " + converter
 		return route, nil
 	}
 	// No Mini 1 mixer route: the firmware's default PCM is what Alice itself
